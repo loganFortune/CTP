@@ -1,4 +1,4 @@
-# CTP
+# CentralTrafficProcessing (CTP)
 **Central Traffic Processing**
 
 The project's goal is to process videos in order to locate elements of road traffic.
