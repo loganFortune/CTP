@@ -29,7 +29,7 @@ These html files gather all the documentation of the code.
 ```
 make gen-doc
 ```
-> ppdoc --html main.py wvideo.py database_vision.py ./test/video_test.py --force --output-dir docs
+> pdoc --html main.py wvideo.py database_vision.py ./test/video_test.py --force --output-dir docs
 
 ## Test 
 
