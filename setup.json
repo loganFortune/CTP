@@ -1,0 +1,13 @@
+{
+    "database_vision": {
+        "title": "Wintics DATA",
+		"src-path-videos": "./data/videos_param/videos/",
+        "src-path-params": "./data/videos_param/params/",
+        "name-files-video": ["highway_1_9h.mp4", "highway_1_18h.mp4", "highway_2_9h.mp4", "highway_2_18h.mp4"],
+        "name-file-param-color": "labels_to_color.json",
+        "name-file-param-zone": "zones.json",
+        "video-class": ["highway_1", "highway_2"],
+        "object-to-detect": ["car", "truck", "motorcycle", "bus"],
+        "id-object-to-detect": [3, 8, 4, 6]
+    }
+}
