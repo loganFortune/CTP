@@ -61,7 +61,7 @@ make run
 
 There are multiple solutions to get faster and more accurate at detection.
 
-- Add filters for the inputs (Morphological Gradient: quite a bad idea when considering the RPN used inside Faster R-CNN)
+- Add filters for the inputs (Morphological Gradient: quite a bad idea considering the RPN used inside Faster R-CNN)
 - Add temporal correlations (the previous detection is correlated to the current detection): recurrent neural networks, or just skip correlated data.
 - Use the power of GPU(s) or multi-threading for CPU(s).
 - Create special convolutional layers for road backgrounds.
