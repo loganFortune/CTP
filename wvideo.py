@@ -21,7 +21,6 @@ import numpy as np
 import os
 import json
 
-
 # Download Model
 model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
 # Training dataset : https://github.com/nightrome/cocostuff
@@ -29,6 +28,12 @@ model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
 model.eval()
 # Use CPU (constraint)
 device = torch.device('cpu')
+
+# GLOBAL PARAMETERS
+BUFFER_SIZE = 5  # How many frames we skipped ?
+NB_DETECTIONS_PER_IMAGE = 4
+MARGE_RECT_FOR_DETECTION = 0.05  # 5% marge to get a rectangle that is enough to get an accurate detection
+DO_RESIZING_METHOD = False
 
 
 def process_video(database_vision, debug=False):
@@ -66,16 +71,11 @@ def process_video(database_vision, debug=False):
         # Case Study Custom Parameters !!
 
         # TODO(logan): check that the absolute_height_marge is not too large according to the image size...
-        marge_rect_for_detection = 0.20  # 30% marge to get a rectangle that is enough to get an accurate detection
-        absolute_height_marge = int(marge_rect_for_detection * height_rect / 2)
-        absolute_width_marge = int(marge_rect_for_detection * width_rect / 2)
+        absolute_height_marge = int(MARGE_RECT_FOR_DETECTION * height_rect / 2)
+        absolute_width_marge = int(MARGE_RECT_FOR_DETECTION * width_rect / 2)
 
         # Debug : print(height_rect, width_rect)
-
-        buffer_size = 10  # How many frames we skipped ?
         it_buffer = -1  # iterator to count the number of frames since the last processed.
-
-        do_resizing_method = False
 
         # Files Management setup for screenshots
         time_stamp = -1
@@ -84,7 +84,7 @@ def process_video(database_vision, debug=False):
 
         # "screenshots/highway_"+lane+"/"+hour+"h/"+time_stamp+".png"
         try:
-            base_file_name = "./screenshots/highway_"+lane+"/"+hour+"h/"
+            base_file_name = "./screenshots/highway_" + lane + "/" + hour + "h/"
             os.makedirs(base_file_name)
         except FileExistsError:
             # directory already exists
@@ -99,24 +99,26 @@ def process_video(database_vision, debug=False):
 
             # Skip some frames
             it_buffer += 1
-            if it_buffer == buffer_size:
+            if it_buffer == BUFFER_SIZE:
                 it_buffer = -1
 
             if ret is True:
                 if it_buffer == -1:
-
                     # Take the region of interest with some margins
+                    minor_x = current_rect[0][2][1] - absolute_height_marge
+                    minor_y = current_rect[0][0][0] - absolute_width_marge
+
                     crop_img = frame[
-                               current_rect[0][2][1] - absolute_height_marge:
+                               minor_x:
                                current_rect[0][2][1] + height_rect + absolute_height_marge,
-                               current_rect[0][0][0] - absolute_width_marge:
+                               minor_y:
                                current_rect[0][0][0] + width_rect + absolute_width_marge
                                ]
 
                     # Debug :
                     # cv2.imshow("cropped", crop_img)
 
-                    img_process = process_image(crop_img, do_resizing_method)
+                    img_process = process_image(crop_img, img_nn_size=DO_RESIZING_METHOD, normalize=False)
 
                     # run inference on the model and get detections
                     tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
@@ -130,31 +132,34 @@ def process_video(database_vision, debug=False):
 
                     tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)  # IOU = AREA of Overlap / AREA of the Union
 
-                    one_valid_box_found = False
-                    for i in range(0, 3):
-                        if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
-                                and scores[tensor_filter[i]] > 0.5:
-                            one_valid_box_found = True
-                            screenshots_results['screenshots'].append([
-                                                    time_stamp,
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    database_vision.id_color[int(labels[tensor_filter[i]])]
-                                                    ])
-                            if debug is True:
-                                resized = cv2.rectangle(img_process.transpose(1, 2, 0),
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    color=database_vision.id_color[int(labels[tensor_filter[i]])], thickness=2)
-                    if one_valid_box_found and debug:
-                        cv2.imshow("Filter", resized)
-
+                    if len(tensor_filter) > 0:
+                        one_valid_box_found = False
+                        for i in range(0, min(len(tensor_filter), NB_DETECTIONS_PER_IMAGE)):
+                            if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
+                                    and scores[tensor_filter[i]] > 0.5:
+                                one_valid_box_found = True
+                                screenshots_results['screenshots'].append([
+                                    time_stamp,
+                                    tuple([int(boxes[tensor_filter[i]][0])+minor_y, int(boxes[tensor_filter[i]][1])+minor_x]),
+                                    tuple([int(boxes[tensor_filter[i]][2])+minor_y, int(boxes[tensor_filter[i]][3])+minor_x]),
+                                    database_vision.id_color[int(labels[tensor_filter[i]])]
+                                ])
+                                if debug is True:
+                                    resized = cv2.rectangle(img_process.transpose(1, 2, 0),
+                                                            tuple([int(boxes[tensor_filter[i]][0]),
+                                                                   int(boxes[tensor_filter[i]][1])]),
+                                                            tuple([int(boxes[tensor_filter[i]][2]),
+                                                                   int(boxes[tensor_filter[i]][3])]),
+                                                            color=database_vision.id_color[
+                                                                int(labels[tensor_filter[i]])], thickness=2)
+                        if one_valid_box_found and debug:
+                            cv2.imshow("Filter", resized)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
             else:
                 break
 
-        with open(base_file_name + "screenshots_result.txt", 'w') as outfile:
+        with open(base_file_name + "screenshots_result.json", 'w') as outfile:
             json.dump(screenshots_results, outfile)
 
         video_to_process.release()
@@ -188,8 +193,8 @@ def filter_file_name(file_name):
     """
     it_video_format = file_name.find(".")
     it_video_lane = file_name.find("_")
-    it_video_hour = file_name.find("_", it_video_lane+1)
-    return file_name[it_video_lane+1:it_video_hour], file_name[it_video_hour+1:it_video_format-1]
+    it_video_hour = file_name.find("_", it_video_lane + 1)
+    return file_name[it_video_lane + 1:it_video_hour], file_name[it_video_hour + 1:it_video_format - 1]
 
 
 def process_image(image, img_nn_size=224, normalize=False):
@@ -264,3 +269,63 @@ def process_image(image, img_nn_size=224, normalize=False):
     image_filtered = image_filtered.transpose(2, 0, 1)
 
     return image_filtered
+
+
+def post_process(database_vision):
+    """
+
+        This functions aims to get the screenshots.
+
+    :param database_vision: Class DatabaseVision
+    :return:
+    """
+    for video_file_name in database_vision.name_files_video:
+
+        video_to_process = cv2.VideoCapture(database_vision.src_path_videos + video_file_name)
+
+        current_rect = get_video_type_by_collision(database_vision.rect, video_file_name)
+
+        assert current_rect is not None
+
+        height_rect = current_rect[0][0][1] - current_rect[0][2][1]
+        width_rect = current_rect[0][1][0] - current_rect[0][0][0]
+        assert height_rect > 0
+        assert width_rect > 0
+
+        # Files Management setup for screenshots
+        time_stamp = -1
+        lane, hour = filter_file_name(video_file_name)
+        assert lane.isnumeric() and hour.isnumeric()
+
+        # "screenshots/highway_"+lane+"/"+hour+"h/"+time_stamp+".png"
+        screenshots_file_name = "./screenshots/highway_" + lane + "/" + hour + "h/screenshots_result.json"
+        assert os.path.isfile(screenshots_file_name)
+
+        with open(screenshots_file_name) as json_data:
+            screenshots_info = json.load(json_data)
+
+        while video_to_process.isOpened():
+
+            ret, frame = video_to_process.read()
+            time_stamp += 1
+
+            rect_to_draw = None
+            for elem in screenshots_info["screenshots"]:
+                if elem[0] == time_stamp:
+                    rect_to_draw = elem
+                    break
+
+            if ret is True and rect_to_draw is not None:
+                resized = cv2.rectangle(frame,
+                                        tuple(rect_to_draw[1]),
+                                        tuple(rect_to_draw[2]),
+                                        color=rect_to_draw[3], thickness=2)
+                cv2.imshow("RECT", resized)
+                # Saving the image : WINTICS FORMAT !
+                # cv2.imwrite("./screenshots/highway_" + lane + "/" + hour + "h/"+str(time_stamp)+".png", resized)
+
+            if ret is False:
+                break
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break

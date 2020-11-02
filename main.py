@@ -14,7 +14,7 @@
 import os
 import sys
 from database_vision import DatabaseVision
-from wvideo import process_video
+from wvideo import process_video, post_process
 
 SETUP_FILE = "./setup.json"
 
@@ -47,8 +47,9 @@ def main():
     # Get the input from the client
     database_vision = DatabaseVision(SETUP_FILE)
     # Process the videos
-    process_video(database_vision)
-
+    # process_video(database_vision)
+    # Post-processing of the videos
+    post_process(database_vision)
     return True
 
 

@@ -66,7 +66,7 @@ class TestWVideo(unittest.TestCase):
     def test_file_name(self):
         """
 
-            This test checks of the function filter_file_name function from wvideo.py is working as expected !
+            This test checks if the function filter_file_name function from wvideo.py is working as expected !
 
         :return:
         """
@@ -79,7 +79,11 @@ class TestWVideo(unittest.TestCase):
                 self.assertEqual(output_filter, tuple(["13", "18"]))
 
     def test_video_detection(self):
+        """
+            This function aims to test video detection.
 
+        :return:
+        """
         resizing_dim = 256
 
         img_process = process_image(self.image_detection, resizing_dim)
