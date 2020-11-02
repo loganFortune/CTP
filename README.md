@@ -4,7 +4,10 @@
 ![CTP Example](./docs/car_o.png) 
 
 The project's goal is to process videos in order to locate elements of road traffic.
+
 In this project, these are limited to cars, trucks, buses and motorcycles.
+
+The system uses Faster R-CNN with *torchvision* (https://arxiv.org/pdf/1506.01497.pdf)
 
 **Warning**: during installation you must import your own data inside the data file !
 
