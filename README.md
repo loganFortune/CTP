@@ -56,3 +56,14 @@ The following command will launch the main program with the following pipeline:
 ```
 make run
 ```
+
+## Improvements
+
+There are multiple solutions to get faster and more accurate at detection.
+
+- Add filters for the inputs (Morphological Gradient: quite a bad idea when considering the RPN used inside Faster R-CNN)
+- Add temporal correlations (the previous detection is correlated to the current detection): recurrent neural networks, or just skip correlated data.
+- Use the power of GPU(s) or multi-threading for CPU(s).
+- Create special convolutional layers for road backgrounds.
+- Improve the NN in size (memory usage) which can be linked to speed up processing.
+
