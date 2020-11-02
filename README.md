@@ -1,7 +1,7 @@
 # CentralTrafficProcessing (CTP)
 **Central Traffic Processing**
 
-![CTP Example](./docs/car_o.png) 
+![CTP Example](./docs/car_0.png) 
 
 The project's goal is to process videos in order to locate elements of road traffic.
 In this project, these are limited to cars, trucks, buses and motorcycles.
