@@ -8,6 +8,10 @@
         "name-file-param-zone": "zones.json",
         "video-class": ["highway_1", "highway_2"],
         "object-to-detect": ["car", "truck", "motorcycle", "bus"],
-        "id-object-to-detect": [3, 8, 4, 6]
+        "id-object-to-detect": [3, 8, 4, 6],
+        "BUFFER_SIZE": 5,
+        "NB_DETECTIONS_PER_IMAGE": 4,
+        "MARGE_RECT_FOR_DETECTION": 0.05,
+        "DO_RESIZING_METHOD": "False"
     }
 }

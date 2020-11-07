@@ -47,7 +47,7 @@ def main():
     # Get the input from the client
     database_vision = DatabaseVision(SETUP_FILE)
     # Process the videos
-    # process_video(database_vision)
+    process_video(database_vision)
     # Post-processing of the videos
     post_process(database_vision)
     return True

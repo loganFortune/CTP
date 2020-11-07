@@ -17,12 +17,12 @@ import unittest
 # Computer Vision
 import cv2
 
-# Python procedures to check
-from wvideo import process_image, filter_file_name
-
 # ML
 import torchvision
 import torch
+
+# Python procedures to check
+from wvideo import process_image, filter_file_name, run_inference
 
 # Download Model
 model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
@@ -58,21 +58,25 @@ class TestWVideo(unittest.TestCase):
         :return:
         """
         image_filtered = process_image(self.image, img_nn_size=224, normalize=False)
-        self.assertEqual(image_filtered.shape[0], 3)  # check transpose is working correctly
-        self.assertEqual(image_filtered.shape[1], 224)  # check dimensions of the image with a simple example
+        # check transpose is working correctly
+        self.assertEqual(image_filtered.shape[0], 3)
+        # check dimensions of the image with a simple example
+        self.assertEqual(image_filtered.shape[1], 224)
         self.assertEqual(image_filtered.shape[2], 224)
         self.assertEqual(image_filtered.dtype, "float64")  # check that we have float values
 
     def test_file_name(self):
         """
 
-            This test checks if the function filter_file_name function from wvideo.py is working as expected !
+        This test checks :
+
+        -> if the function filter_file_name function from wvideo.py is working as expected !
 
         :return:
         """
         inputs = ["highway_2_9h.mp4", "highway_13_18h.mp4"]
-        for i in range(0, len(inputs)):
-            output_filter = filter_file_name(inputs[i])
+        for i, value in enumerate(inputs):
+            output_filter = filter_file_name(value)
             if i == 0:
                 self.assertEqual(output_filter, tuple(["2", "9"]))
             else:
@@ -88,25 +92,26 @@ class TestWVideo(unittest.TestCase):
 
         img_process = process_image(self.image_detection, resizing_dim)
 
-        # run inference on the model and get detections
-        tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
-        with torch.no_grad():
-            tensor_img = tensor_img.to(device)
-            detections = model(tensor_img)[0]
+        detections = run_inference(img_process)
 
         boxes = detections["boxes"]  # boxes
-        labels = detections["labels"]  # labels
+        # labels = detections["labels"]  # labels
         scores = detections["scores"]  # scores
 
-        tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)  # IOU = AREA of Overlap / AREA of the Union
-        for i in range(0, len(tensor_filter)):
+        resized = None
+
+        tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)
+        # IOU = AREA of Overlap / AREA of the Union
+
+        for tensor in tensor_filter:
+            rect_pt_1 = tuple([int(boxes[tensor][0]), int(boxes[tensor][1])])
+            rect_pt_2 = tuple([int(boxes[tensor][2]), int(boxes[tensor][3])])
             resized = cv2.rectangle(img_process.transpose(1, 2, 0),
-                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
+                                    rect_pt_1,
+                                    rect_pt_2,
                                     color=(255, 0, 0), thickness=2)
-        """cv2.imshow("Filter", resized)
-        cv2.waitKey(0)"""
-        # TODO: We can talk about it !!
+        cv2.imshow("Filter", resized)
+        cv2.waitKey(0)
 
 
 if __name__ == '__main__':
