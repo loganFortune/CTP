@@ -56,6 +56,13 @@ The following command will launch the main program with the following pipeline:
 ```
 make run
 ```
+## Lint Check
+
+The following command will check for syntaxic and code format errors
+
+```
+make lint-check
+```
 
 ## Improvements
 
