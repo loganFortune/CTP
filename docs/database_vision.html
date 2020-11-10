@@ -47,6 +47,7 @@
 &#34;&#34;&#34;
 import json
 import os
+import sys
 
 
 class DatabaseVision:
@@ -64,7 +65,8 @@ class DatabaseVision:
             id_object_to_detect : list with all the id objects that must be detected
             video_class : list of the different localization [&#34;highway_1&#34;, &#34;highway_2&#34;]
             rect : dict self.rect[video_class] = rect
-            id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yellow, truck = black)
+            id_color : dict self.id_color[id_object]
+                color_id (car = blue, bus = yellow, truck = black)
     &#34;&#34;&#34;
 
     def __init__(self, setup_file):
@@ -74,32 +76,43 @@ class DatabaseVision:
         # Store files names
         # Store the labels to color
         # Store the zones
-        assert data.get(&#34;database_vision&#34;, None) is not None
-        self.src_path_videos = data[&#34;database_vision&#34;].get(&#34;src-path-videos&#34;, None)
+        database = data.get(&#34;database_vision&#34;, None)
+        assert database is not None
+        self.src_path_videos = database.get(&#34;src-path-videos&#34;, None)
         assert self.src_path_videos is not None
-        self.src_path_params = data[&#34;database_vision&#34;].get(&#34;src-path-params&#34;, None)
+        self.src_path_params = database.get(&#34;src-path-params&#34;, None)
         assert self.src_path_params is not None
-        self.name_files_video = data[&#34;database_vision&#34;].get(&#34;name-files-video&#34;, None)
+        self.name_files_video = database.get(&#34;name-files-video&#34;, None)
         assert self.name_files_video is not None
-        self.name_files_params_color = data[&#34;database_vision&#34;].get(&#34;name-file-param-color&#34;, None)
+        self.name_files_params_color = database.get(&#34;name-file-param-color&#34;, None)
         assert self.name_files_params_color is not None
-        self.name_files_params_zone = data[&#34;database_vision&#34;].get(&#34;name-file-param-zone&#34;, None)
+        self.name_files_params_zone = database.get(&#34;name-file-param-zone&#34;, None)
         assert self.name_files_params_zone is not None
         self.check_files_consistency()
         # Computer Vision Parameters
         # What to detect ?
-        self.object_to_detect = data[&#34;database_vision&#34;].get(&#34;object-to-detect&#34;, None)
+        self.object_to_detect = database.get(&#34;object-to-detect&#34;, None)
         assert self.object_to_detect is not None
-        self.id_object_to_detect = data[&#34;database_vision&#34;].get(&#34;id-object-to-detect&#34;, None)
+        self.id_object_to_detect = database.get(&#34;id-object-to-detect&#34;, None)
         assert self.id_object_to_detect is not None
         # Where to detect ?
-        self.video_class = data[&#34;database_vision&#34;].get(&#34;video-class&#34;, None)
+        self.video_class = database.get(&#34;video-class&#34;, None)
         assert self.video_class is not None
         self.rect = dict()
         self.get_rectangle_info()
         # Color Setup
         self.id_color = dict()
         self.get_color_info()
+
+        # GLOBAL PARAMETERS
+        self.buffer_size = database.get(&#34;BUFFER_SIZE&#34;, None)
+        assert self.buffer_size is not None
+        self.nb_detection_per_image = database.get(&#34;NB_DETECTIONS_PER_IMAGE&#34;, None)
+        assert self.nb_detection_per_image is not None
+        self.marge_rect_for_detection = database.get(&#34;MARGE_RECT_FOR_DETECTION&#34;, None)
+        assert self.marge_rect_for_detection is not None
+        self.do_resizing_method = database.get(&#34;DO_RESIZING_METHOD&#34;, None)
+        assert self.do_resizing_method is not None
 
     def check_files_consistency(self):
         &#34;&#34;&#34; Check if the files exist &#34;&#34;&#34;
@@ -116,9 +129,9 @@ class DatabaseVision:
         for video_class_type in self.video_class:
             rect = data.get(video_class_type, None)
             if rect is None:
-                print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): One video class has not a rectangle &#34;
-                      &#34;defined.&#34;)
-                exit(-1)
+                print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): &#34;
+                      &#34;One video class has not a rectangle defined.&#34;)
+                sys.exit(-1)
             else:
                 self.rect[video_class_type] = rect
 
@@ -129,8 +142,9 @@ class DatabaseVision:
         for id_object in self.id_object_to_detect:
             color_id = data.get(str(id_object), None)
             if color_id is None:
-                print(&#34;Program Error (class DatabaseVision)(get_color_info): One id has not a color.&#34;)
-                exit(-1)
+                print(&#34;Program Error (class DatabaseVision)(get_color_info): &#34;
+                      &#34;One id has not a color.&#34;)
+                sys.exit(-1)
             else:
                 self.id_color[id_object] = color_id</code></pre>
 </details>
@@ -160,7 +174,8 @@ object_to_detect : the names of all objects like ["car", "truck", "motorcycle", 
 id_object_to_detect : list with all the id objects that must be detected
 video_class : list of the different localization ["highway_1", "highway_2"]
 rect : dict self.rect[video_class] = rect
-id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yellow, truck = black)
+id_color : dict self.id_color[id_object]
+    color_id (car = blue, bus = yellow, truck = black)
 </code></pre></div>
 <details class="source">
 <summary>
@@ -181,7 +196,8 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
             id_object_to_detect : list with all the id objects that must be detected
             video_class : list of the different localization [&#34;highway_1&#34;, &#34;highway_2&#34;]
             rect : dict self.rect[video_class] = rect
-            id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yellow, truck = black)
+            id_color : dict self.id_color[id_object]
+                color_id (car = blue, bus = yellow, truck = black)
     &#34;&#34;&#34;
 
     def __init__(self, setup_file):
@@ -191,32 +207,43 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
         # Store files names
         # Store the labels to color
         # Store the zones
-        assert data.get(&#34;database_vision&#34;, None) is not None
-        self.src_path_videos = data[&#34;database_vision&#34;].get(&#34;src-path-videos&#34;, None)
+        database = data.get(&#34;database_vision&#34;, None)
+        assert database is not None
+        self.src_path_videos = database.get(&#34;src-path-videos&#34;, None)
         assert self.src_path_videos is not None
-        self.src_path_params = data[&#34;database_vision&#34;].get(&#34;src-path-params&#34;, None)
+        self.src_path_params = database.get(&#34;src-path-params&#34;, None)
         assert self.src_path_params is not None
-        self.name_files_video = data[&#34;database_vision&#34;].get(&#34;name-files-video&#34;, None)
+        self.name_files_video = database.get(&#34;name-files-video&#34;, None)
         assert self.name_files_video is not None
-        self.name_files_params_color = data[&#34;database_vision&#34;].get(&#34;name-file-param-color&#34;, None)
+        self.name_files_params_color = database.get(&#34;name-file-param-color&#34;, None)
         assert self.name_files_params_color is not None
-        self.name_files_params_zone = data[&#34;database_vision&#34;].get(&#34;name-file-param-zone&#34;, None)
+        self.name_files_params_zone = database.get(&#34;name-file-param-zone&#34;, None)
         assert self.name_files_params_zone is not None
         self.check_files_consistency()
         # Computer Vision Parameters
         # What to detect ?
-        self.object_to_detect = data[&#34;database_vision&#34;].get(&#34;object-to-detect&#34;, None)
+        self.object_to_detect = database.get(&#34;object-to-detect&#34;, None)
         assert self.object_to_detect is not None
-        self.id_object_to_detect = data[&#34;database_vision&#34;].get(&#34;id-object-to-detect&#34;, None)
+        self.id_object_to_detect = database.get(&#34;id-object-to-detect&#34;, None)
         assert self.id_object_to_detect is not None
         # Where to detect ?
-        self.video_class = data[&#34;database_vision&#34;].get(&#34;video-class&#34;, None)
+        self.video_class = database.get(&#34;video-class&#34;, None)
         assert self.video_class is not None
         self.rect = dict()
         self.get_rectangle_info()
         # Color Setup
         self.id_color = dict()
         self.get_color_info()
+
+        # GLOBAL PARAMETERS
+        self.buffer_size = database.get(&#34;BUFFER_SIZE&#34;, None)
+        assert self.buffer_size is not None
+        self.nb_detection_per_image = database.get(&#34;NB_DETECTIONS_PER_IMAGE&#34;, None)
+        assert self.nb_detection_per_image is not None
+        self.marge_rect_for_detection = database.get(&#34;MARGE_RECT_FOR_DETECTION&#34;, None)
+        assert self.marge_rect_for_detection is not None
+        self.do_resizing_method = database.get(&#34;DO_RESIZING_METHOD&#34;, None)
+        assert self.do_resizing_method is not None
 
     def check_files_consistency(self):
         &#34;&#34;&#34; Check if the files exist &#34;&#34;&#34;
@@ -233,9 +260,9 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
         for video_class_type in self.video_class:
             rect = data.get(video_class_type, None)
             if rect is None:
-                print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): One video class has not a rectangle &#34;
-                      &#34;defined.&#34;)
-                exit(-1)
+                print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): &#34;
+                      &#34;One video class has not a rectangle defined.&#34;)
+                sys.exit(-1)
             else:
                 self.rect[video_class_type] = rect
 
@@ -246,8 +273,9 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
         for id_object in self.id_object_to_detect:
             color_id = data.get(str(id_object), None)
             if color_id is None:
-                print(&#34;Program Error (class DatabaseVision)(get_color_info): One id has not a color.&#34;)
-                exit(-1)
+                print(&#34;Program Error (class DatabaseVision)(get_color_info): &#34;
+                      &#34;One id has not a color.&#34;)
+                sys.exit(-1)
             else:
                 self.id_color[id_object] = color_id</code></pre>
 </details>
@@ -286,8 +314,9 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
     for id_object in self.id_object_to_detect:
         color_id = data.get(str(id_object), None)
         if color_id is None:
-            print(&#34;Program Error (class DatabaseVision)(get_color_info): One id has not a color.&#34;)
-            exit(-1)
+            print(&#34;Program Error (class DatabaseVision)(get_color_info): &#34;
+                  &#34;One id has not a color.&#34;)
+            sys.exit(-1)
         else:
             self.id_color[id_object] = color_id</code></pre>
 </details>
@@ -310,9 +339,9 @@ id_color : dict self.id_color[id_object] =&gt; color_id (car = blue, bus = yello
     for video_class_type in self.video_class:
         rect = data.get(video_class_type, None)
         if rect is None:
-            print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): One video class has not a rectangle &#34;
-                  &#34;defined.&#34;)
-            exit(-1)
+            print(&#34;Program Error (class DatabaseVision)(get_rectangle_info): &#34;
+                  &#34;One video class has not a rectangle defined.&#34;)
+            sys.exit(-1)
         else:
             self.rect[video_class_type] = rect</code></pre>
 </details>

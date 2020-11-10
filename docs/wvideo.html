@@ -45,16 +45,15 @@
 
     Date: October 2020
 &#34;&#34;&#34;
+# Files management
+import os
+import json
 # ML
 import torchvision
 import torch
 # Image Processing
 import cv2
 import numpy as np
-# Files management
-import os
-import json
-
 
 # Download Model
 model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
@@ -67,16 +66,18 @@ device = torch.device(&#39;cpu&#39;)
 
 def process_video(database_vision, debug=False):
     &#34;&#34;&#34;
-        This function aims to get the all the detections in a certain zone provided by database_vision.
+    This function aims to get the all the detections
+    in a certain zone provided by database_vision.
 
-        Detection via fasterrcnn_resnet50_fpn:
+       Detection via fasterrcnn_resnet50_fpn:
 
-        - boxes (``FloatTensor[N, 4]``): the predicted boxes in ``[x1, y1, x2, y2]`` format, with values of ``x``
-                            between ``0`` and ``W`` and values of ``y`` between ``0`` and ``H``
+    - boxes (``FloatTensor[N, 4]``)
 
-        - labels (``Int64Tensor[N]``): the predicted labels for each image
+    - labels (``Int64Tensor[N]``): the predicted labels for each image
 
-        - scores (``Tensor[N]``): the scores or each prediction
+    - scores (``Tensor[N]``): the scores or each prediction
+
+    :param debug: Boolean
 
     :param database_vision: class DatabaseVision
 
@@ -92,24 +93,11 @@ def process_video(database_vision, debug=False):
 
         assert current_rect is not None
 
-        height_rect = current_rect[0][0][1] - current_rect[0][2][1]
-        width_rect = current_rect[0][1][0] - current_rect[0][0][0]
-        assert height_rect &gt; 0
-        assert width_rect &gt; 0
-
-        # Case Study Custom Parameters !!
-
-        # TODO(logan): check that the absolute_height_marge is not too large according to the image size...
-        marge_rect_for_detection = 0.20  # 30% marge to get a rectangle that is enough to get an accurate detection
-        absolute_height_marge = int(marge_rect_for_detection * height_rect / 2)
-        absolute_width_marge = int(marge_rect_for_detection * width_rect / 2)
+        height_rect, width_rect, \
+        absolute_height_marge, absolute_width_marge = get_rectangle(database_vision, current_rect)
 
         # Debug : print(height_rect, width_rect)
-
-        buffer_size = 10  # How many frames we skipped ?
         it_buffer = -1  # iterator to count the number of frames since the last processed.
-
-        do_resizing_method = False
 
         # Files Management setup for screenshots
         time_stamp = -1
@@ -117,8 +105,9 @@ def process_video(database_vision, debug=False):
         assert lane.isnumeric() and hour.isnumeric()
 
         # &#34;screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;+time_stamp+&#34;.png&#34;
+        base_file_name = &#34;./screenshots/highway_&#34; + lane + &#34;/&#34; + hour + &#34;h/&#34;
+
         try:
-            base_file_name = &#34;./screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;
             os.makedirs(base_file_name)
         except FileExistsError:
             # directory already exists
@@ -133,71 +122,126 @@ def process_video(database_vision, debug=False):
 
             # Skip some frames
             it_buffer += 1
-            if it_buffer == buffer_size:
+            if it_buffer == database_vision.buffer_size:
                 it_buffer = -1
 
             if ret is True:
                 if it_buffer == -1:
-
                     # Take the region of interest with some margins
+                    minor_x = current_rect[0][2][1] - absolute_height_marge
+                    minor_y = current_rect[0][0][0] - absolute_width_marge
+
                     crop_img = frame[
-                               current_rect[0][2][1] - absolute_height_marge:
+                               minor_x:
                                current_rect[0][2][1] + height_rect + absolute_height_marge,
-                               current_rect[0][0][0] - absolute_width_marge:
+                               minor_y:
                                current_rect[0][0][0] + width_rect + absolute_width_marge
                                ]
 
                     # Debug :
                     # cv2.imshow(&#34;cropped&#34;, crop_img)
 
-                    img_process = process_image(crop_img, do_resizing_method)
+                    img_process = process_image(crop_img,
+                                                img_nn_size=database_vision.do_resizing_method,
+                                                normalize=False)
 
-                    # run inference on the model and get detections
-                    tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
-                    with torch.no_grad():
-                        tensor_img = tensor_img.to(device)
-                        detections = model(tensor_img)[0]
+                    detections = run_inference(img_process)
 
                     boxes = detections[&#34;boxes&#34;]  # boxes
                     labels = detections[&#34;labels&#34;]  # labels
                     scores = detections[&#34;scores&#34;]  # scores
 
-                    tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)  # IOU = AREA of Overlap / AREA of the Union
+                    tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)
+                    # IOU = AREA of Overlap / AREA of the Union
 
-                    one_valid_box_found = False
-                    for i in range(0, 3):
-                        if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
-                                and scores[tensor_filter[i]] &gt; 0.5:
-                            one_valid_box_found = True
-                            screenshots_results[&#39;screenshots&#39;].append([
-                                                    time_stamp,
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    database_vision.id_color[int(labels[tensor_filter[i]])]
-                                                    ])
-                            if debug is True:
-                                resized = cv2.rectangle(img_process.transpose(1, 2, 0),
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    color=database_vision.id_color[int(labels[tensor_filter[i]])], thickness=2)
-                    if one_valid_box_found and debug:
-                        cv2.imshow(&#34;Filter&#34;, resized)
+                    resized = None
 
+                    if len(tensor_filter) &gt; 0:
+                        one_valid_box_found = False
+                        minimum_detection_objects = min(len(tensor_filter),
+                                                        database_vision.nb_detection_per_image)
+                        for i in range(0, minimum_detection_objects):
+                            if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
+                                    and scores[tensor_filter[i]] &gt; 0.5:
+                                one_valid_box_found = True
+                                screenshots_results[&#39;screenshots&#39;].append([
+                                    time_stamp,
+                                    tuple([int(boxes[tensor_filter[i]][0]) + minor_y,
+                                           int(boxes[tensor_filter[i]][1]) + minor_x]),
+                                    tuple([int(boxes[tensor_filter[i]][2]) + minor_y,
+                                           int(boxes[tensor_filter[i]][3]) + minor_x]),
+                                    database_vision.id_color[int(labels[tensor_filter[i]])]
+                                ])
+                                if debug is True:
+                                    rect_pt_1 = tuple([int(boxes[tensor_filter[i]][0]),
+                                                       int(boxes[tensor_filter[i]][1])])
+                                    rect_pt_2 = tuple([int(boxes[tensor_filter[i]][2]),
+                                                       int(boxes[tensor_filter[i]][3])])
+                                    resized = cv2.rectangle(img_process.transpose(1, 2, 0),
+                                                            rect_pt_1,
+                                                            rect_pt_2,
+                                                            color=database_vision.id_color[
+                                                                int(labels[tensor_filter[i]])
+                                                            ], thickness=2)
+                        if one_valid_box_found and debug:
+                            cv2.imshow(&#34;Filter&#34;, resized)
                 if cv2.waitKey(1) &amp; 0xFF == ord(&#39;q&#39;):
                     break
             else:
                 break
 
-        with open(base_file_name + &#34;screenshots_result.txt&#34;, &#39;w&#39;) as outfile:
+        with open(base_file_name + &#34;screenshots_result.json&#34;, &#39;w&#39;) as outfile:
             json.dump(screenshots_results, outfile)
 
         video_to_process.release()
         cv2.destroyAllWindows()
 
 
+def get_rectangle(database_vision, current_rect):
+    &#34;&#34;&#34;
+    This function aims to get information about the rectangle.
+
+    :param database_vision:
+
+    :param current_rect:
+
+    :return:
+    &#34;&#34;&#34;
+    height_rect = current_rect[0][0][1] - current_rect[0][2][1]
+    width_rect = current_rect[0][1][0] - current_rect[0][0][0]
+    assert height_rect &gt; 0
+    assert width_rect &gt; 0
+
+    # Case Study Custom Parameters !!
+
+    # TODO(logan): check that the absolute_height_marge is not too large
+    #  according to the image size...
+    absolute_height_marge = int(database_vision.marge_rect_for_detection * height_rect / 2)
+    absolute_width_marge = int(database_vision.marge_rect_for_detection * width_rect / 2)
+    return height_rect, width_rect, absolute_height_marge, absolute_width_marge
+
+
+def run_inference(img_process):
+    &#34;&#34;&#34;
+    This function aims to run the inference on the nn selected
+    with the img_process image as the input.
+
+    :param img_process: OpenCV image
+
+    :return: torchvision output detection
+    &#34;&#34;&#34;
+    # run inference on the model and get detections
+    tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
+    with torch.no_grad():
+        tensor_img = tensor_img.to(device)
+        detections = model(tensor_img)[0]
+    return detections
+
+
 def get_video_type_by_collision(video_type_rect, video_name):
     &#34;&#34;&#34;
-        This function aims to find what is the right rectangle instantiation according to the name of the video.
+    This function aims to find what is the right rectangle instantiation
+    according to the name of the video.
 
     :param video_type_rect: class DatabaseVision (self.rect)
 
@@ -218,12 +262,14 @@ def filter_file_name(file_name):
 
     :param file_name: str
 
-    :return: str, str
+    :return: str - lane number, str - hour number
     &#34;&#34;&#34;
     it_video_format = file_name.find(&#34;.&#34;)
     it_video_lane = file_name.find(&#34;_&#34;)
-    it_video_hour = file_name.find(&#34;_&#34;, it_video_lane+1)
-    return file_name[it_video_lane+1:it_video_hour], file_name[it_video_hour+1:it_video_format-1]
+    it_video_hour = file_name.find(&#34;_&#34;, it_video_lane + 1)
+    lane_number = file_name[it_video_lane + 1:it_video_hour]
+    hour_number = file_name[it_video_hour + 1:it_video_format - 1]
+    return lane_number, hour_number
 
 
 def process_image(image, img_nn_size=224, normalize=False):
@@ -235,7 +281,8 @@ def process_image(image, img_nn_size=224, normalize=False):
 
         All pre-trained models expect input images normalized in the same way,
 
-        i.e. mini-batches of 3-channel RGB images of shape (3 x H x W), where H and W are expected to be at least 224.
+        i.e. mini-batches of 3-channel RGB images of shape (3 x H x W),
+        where H and W are expected to be at least 224.
 
         The images have to be loaded in to a range of [0, 1]
 
@@ -245,10 +292,13 @@ def process_image(image, img_nn_size=224, normalize=False):
 
     https://stackoverflow.com/questions/4674623/why-do-we-have-to-normalize-the-input-for-an-artificial-neural-network/
 
-        When you use unnormalized input features, the loss function is likely to have very elongated valleys.
-        When optimizing with gradient descent, this becomes an issue because the gradient will be steep with respect
+        When you use unnormalized input features,
+        the loss function is likely to have very elongated valleys.
+        When optimizing with gradient descent,
+        this becomes an issue because the gradient will be steep with respect
         some of the parameters.
-        That leads to large oscillations in the search space, as you are bouncing between steep slopes.
+        That leads to large oscillations in the search space,
+        as you are bouncing between steep slopes.
         To compensate, you have to stabilize optimization with small learning rates.
 
     :param normalize: Bool
@@ -297,7 +347,67 @@ def process_image(image, img_nn_size=224, normalize=False):
 
     image_filtered = image_filtered.transpose(2, 0, 1)
 
-    return image_filtered</code></pre>
+    return image_filtered
+
+
+def post_process(database_vision):
+    &#34;&#34;&#34;
+
+        This functions aims to get the screenshots.
+
+    :param database_vision: Class DatabaseVision
+    :return:
+    &#34;&#34;&#34;
+    for video_file_name in database_vision.name_files_video:
+
+        video_to_process = cv2.VideoCapture(database_vision.src_path_videos + video_file_name)
+
+        current_rect = get_video_type_by_collision(database_vision.rect, video_file_name)
+
+        assert current_rect is not None
+
+        height_rect = current_rect[0][0][1] - current_rect[0][2][1]
+        width_rect = current_rect[0][1][0] - current_rect[0][0][0]
+        assert height_rect &gt; 0
+        assert width_rect &gt; 0
+
+        # Files Management setup for screenshots
+        time_stamp = -1
+        lane, hour = filter_file_name(video_file_name)
+        assert lane.isnumeric() and hour.isnumeric()
+
+        # &#34;screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;+time_stamp+&#34;.png&#34;
+        screenshots_file_name = &#34;./screenshots/highway_&#34; \
+                                + lane + &#34;/&#34; \
+                                + hour \
+                                + &#34;h/screenshots_result.json&#34;
+        assert os.path.isfile(screenshots_file_name)
+
+        with open(screenshots_file_name) as json_data:
+            screenshots_info = json.load(json_data)
+
+        while video_to_process.isOpened():
+
+            ret, frame = video_to_process.read()
+            time_stamp += 1
+
+            rect_to_draw = None
+            for elem in screenshots_info[&#34;screenshots&#34;]:
+                if elem[0] == time_stamp:
+                    rect_to_draw = elem
+                    break
+
+            if ret is True and rect_to_draw is not None:
+                resized = cv2.rectangle(frame,
+                                        tuple(rect_to_draw[1]),
+                                        tuple(rect_to_draw[2]),
+                                        color=rect_to_draw[3], thickness=2)
+                cv2.imshow(&#34;RECT&#34;, resized)
+            if ret is False:
+                break
+
+            if cv2.waitKey(1) &amp; 0xFF == ord(&#39;q&#39;):
+                break</code></pre>
 </details>
 </section>
 <section>
@@ -314,7 +424,7 @@ def process_image(image, img_nn_size=224, normalize=False):
 <div class="desc"><p>This function aims to deliver an accurate decomposition of the video file name.
 This function is highly dependent of the format given for the example.</p>
 <p>:param file_name: str</p>
-<p>:return: str, str</p></div>
+<p>:return: str - lane number, str - hour number</p></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
@@ -326,19 +436,58 @@ This function is highly dependent of the format given for the example.</p>
 
     :param file_name: str
 
-    :return: str, str
+    :return: str - lane number, str - hour number
     &#34;&#34;&#34;
     it_video_format = file_name.find(&#34;.&#34;)
     it_video_lane = file_name.find(&#34;_&#34;)
-    it_video_hour = file_name.find(&#34;_&#34;, it_video_lane+1)
-    return file_name[it_video_lane+1:it_video_hour], file_name[it_video_hour+1:it_video_format-1]</code></pre>
+    it_video_hour = file_name.find(&#34;_&#34;, it_video_lane + 1)
+    lane_number = file_name[it_video_lane + 1:it_video_hour]
+    hour_number = file_name[it_video_hour + 1:it_video_format - 1]
+    return lane_number, hour_number</code></pre>
+</details>
+</dd>
+<dt id="wvideo.get_rectangle"><code class="name flex">
+<span>def <span class="ident">get_rectangle</span></span>(<span>database_vision, current_rect)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This function aims to get information about the rectangle.</p>
+<p>:param database_vision:</p>
+<p>:param current_rect:</p>
+<p>:return:</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def get_rectangle(database_vision, current_rect):
+    &#34;&#34;&#34;
+    This function aims to get information about the rectangle.
+
+    :param database_vision:
+
+    :param current_rect:
+
+    :return:
+    &#34;&#34;&#34;
+    height_rect = current_rect[0][0][1] - current_rect[0][2][1]
+    width_rect = current_rect[0][1][0] - current_rect[0][0][0]
+    assert height_rect &gt; 0
+    assert width_rect &gt; 0
+
+    # Case Study Custom Parameters !!
+
+    # TODO(logan): check that the absolute_height_marge is not too large
+    #  according to the image size...
+    absolute_height_marge = int(database_vision.marge_rect_for_detection * height_rect / 2)
+    absolute_width_marge = int(database_vision.marge_rect_for_detection * width_rect / 2)
+    return height_rect, width_rect, absolute_height_marge, absolute_width_marge</code></pre>
 </details>
 </dd>
 <dt id="wvideo.get_video_type_by_collision"><code class="name flex">
 <span>def <span class="ident">get_video_type_by_collision</span></span>(<span>video_type_rect, video_name)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>This function aims to find what is the right rectangle instantiation according to the name of the video.</p>
+<div class="desc"><p>This function aims to find what is the right rectangle instantiation
+according to the name of the video.</p>
 <p>:param video_type_rect: class DatabaseVision (self.rect)</p>
 <p>:param video_name: str</p>
 <p>:return: points of the rectangle or None</p></div>
@@ -348,7 +497,8 @@ This function is highly dependent of the format given for the example.</p>
 </summary>
 <pre><code class="python">def get_video_type_by_collision(video_type_rect, video_name):
     &#34;&#34;&#34;
-        This function aims to find what is the right rectangle instantiation according to the name of the video.
+    This function aims to find what is the right rectangle instantiation
+    according to the name of the video.
 
     :param video_type_rect: class DatabaseVision (self.rect)
 
@@ -362,6 +512,77 @@ This function is highly dependent of the format given for the example.</p>
     return None</code></pre>
 </details>
 </dd>
+<dt id="wvideo.post_process"><code class="name flex">
+<span>def <span class="ident">post_process</span></span>(<span>database_vision)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This functions aims to get the screenshots.</p>
+<p>:param database_vision: Class DatabaseVision
+:return:</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def post_process(database_vision):
+    &#34;&#34;&#34;
+
+        This functions aims to get the screenshots.
+
+    :param database_vision: Class DatabaseVision
+    :return:
+    &#34;&#34;&#34;
+    for video_file_name in database_vision.name_files_video:
+
+        video_to_process = cv2.VideoCapture(database_vision.src_path_videos + video_file_name)
+
+        current_rect = get_video_type_by_collision(database_vision.rect, video_file_name)
+
+        assert current_rect is not None
+
+        height_rect = current_rect[0][0][1] - current_rect[0][2][1]
+        width_rect = current_rect[0][1][0] - current_rect[0][0][0]
+        assert height_rect &gt; 0
+        assert width_rect &gt; 0
+
+        # Files Management setup for screenshots
+        time_stamp = -1
+        lane, hour = filter_file_name(video_file_name)
+        assert lane.isnumeric() and hour.isnumeric()
+
+        # &#34;screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;+time_stamp+&#34;.png&#34;
+        screenshots_file_name = &#34;./screenshots/highway_&#34; \
+                                + lane + &#34;/&#34; \
+                                + hour \
+                                + &#34;h/screenshots_result.json&#34;
+        assert os.path.isfile(screenshots_file_name)
+
+        with open(screenshots_file_name) as json_data:
+            screenshots_info = json.load(json_data)
+
+        while video_to_process.isOpened():
+
+            ret, frame = video_to_process.read()
+            time_stamp += 1
+
+            rect_to_draw = None
+            for elem in screenshots_info[&#34;screenshots&#34;]:
+                if elem[0] == time_stamp:
+                    rect_to_draw = elem
+                    break
+
+            if ret is True and rect_to_draw is not None:
+                resized = cv2.rectangle(frame,
+                                        tuple(rect_to_draw[1]),
+                                        tuple(rect_to_draw[2]),
+                                        color=rect_to_draw[3], thickness=2)
+                cv2.imshow(&#34;RECT&#34;, resized)
+            if ret is False:
+                break
+
+            if cv2.waitKey(1) &amp; 0xFF == ord(&#39;q&#39;):
+                break</code></pre>
+</details>
+</dd>
 <dt id="wvideo.process_image"><code class="name flex">
 <span>def <span class="ident">process_image</span></span>(<span>image, img_nn_size=224, normalize=False)</span>
 </code></dt>
@@ -372,7 +593,8 @@ Else img_nn_size &gt; 0 : resize !
 
 All pre-trained models expect input images normalized in the same way,
 
-i.e. mini-batches of 3-channel RGB images of shape (3 x H x W), where H and W are expected to be at least 224.
+i.e. mini-batches of 3-channel RGB images of shape (3 x H x W),
+where H and W are expected to be at least 224.
 
 The images have to be loaded in to a range of [0, 1]
 
@@ -381,10 +603,13 @@ and then normalized using mean = [0.485, 0.456, 0.406] and std = [0.229, 0.224, 
 Theory :
 </code></pre>
 <p><a href="https://stackoverflow.com/questions/4674623/why-do-we-have-to-normalize-the-input-for-an-artificial-neural-network/">https://stackoverflow.com/questions/4674623/why-do-we-have-to-normalize-the-input-for-an-artificial-neural-network/</a></p>
-<pre><code>When you use unnormalized input features, the loss function is likely to have very elongated valleys.
-When optimizing with gradient descent, this becomes an issue because the gradient will be steep with respect
+<pre><code>When you use unnormalized input features,
+the loss function is likely to have very elongated valleys.
+When optimizing with gradient descent,
+this becomes an issue because the gradient will be steep with respect
 some of the parameters.
-That leads to large oscillations in the search space, as you are bouncing between steep slopes.
+That leads to large oscillations in the search space,
+as you are bouncing between steep slopes.
 To compensate, you have to stabilize optimization with small learning rates.
 </code></pre>
 <p>:param normalize: Bool</p>
@@ -404,7 +629,8 @@ To compensate, you have to stabilize optimization with small learning rates.
 
         All pre-trained models expect input images normalized in the same way,
 
-        i.e. mini-batches of 3-channel RGB images of shape (3 x H x W), where H and W are expected to be at least 224.
+        i.e. mini-batches of 3-channel RGB images of shape (3 x H x W),
+        where H and W are expected to be at least 224.
 
         The images have to be loaded in to a range of [0, 1]
 
@@ -414,10 +640,13 @@ To compensate, you have to stabilize optimization with small learning rates.
 
     https://stackoverflow.com/questions/4674623/why-do-we-have-to-normalize-the-input-for-an-artificial-neural-network/
 
-        When you use unnormalized input features, the loss function is likely to have very elongated valleys.
-        When optimizing with gradient descent, this becomes an issue because the gradient will be steep with respect
+        When you use unnormalized input features,
+        the loss function is likely to have very elongated valleys.
+        When optimizing with gradient descent,
+        this becomes an issue because the gradient will be steep with respect
         some of the parameters.
-        That leads to large oscillations in the search space, as you are bouncing between steep slopes.
+        That leads to large oscillations in the search space,
+        as you are bouncing between steep slopes.
         To compensate, you have to stabilize optimization with small learning rates.
 
     :param normalize: Bool
@@ -473,16 +702,21 @@ To compensate, you have to stabilize optimization with small learning rates.
 <span>def <span class="ident">process_video</span></span>(<span>database_vision, debug=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>This function aims to get the all the detections in a certain zone provided by database_vision.</p>
-<pre><code>Detection via fasterrcnn_resnet50_fpn:
-
-- boxes (&lt;code&gt;FloatTensor\[N, 4]&lt;/code&gt;): the predicted boxes in &lt;code&gt;\[x1, y1, x2, y2]&lt;/code&gt; format, with values of &lt;code&gt;x&lt;/code&gt;
-                    between &lt;code&gt;0&lt;/code&gt; and &lt;code&gt;W&lt;/code&gt; and values of &lt;code&gt;y&lt;/code&gt; between &lt;code&gt;0&lt;/code&gt; and &lt;code&gt;H&lt;/code&gt;
-
-- labels (&lt;code&gt;Int64Tensor\[N]&lt;/code&gt;): the predicted labels for each image
-
-- scores (&lt;code&gt;Tensor\[N]&lt;/code&gt;): the scores or each prediction
-</code></pre>
+<div class="desc"><p>This function aims to get the all the detections
+in a certain zone provided by database_vision.</p>
+<p>Detection via fasterrcnn_resnet50_fpn:</p>
+<ul>
+<li>
+<p>boxes (<code>FloatTensor[N, 4]</code>)</p>
+</li>
+<li>
+<p>labels (<code>Int64Tensor[N]</code>): the predicted labels for each image</p>
+</li>
+<li>
+<p>scores (<code>Tensor[N]</code>): the scores or each prediction</p>
+</li>
+</ul>
+<p>:param debug: Boolean</p>
 <p>:param database_vision: class DatabaseVision</p>
 <p>:return:</p></div>
 <details class="source">
@@ -491,16 +725,18 @@ To compensate, you have to stabilize optimization with small learning rates.
 </summary>
 <pre><code class="python">def process_video(database_vision, debug=False):
     &#34;&#34;&#34;
-        This function aims to get the all the detections in a certain zone provided by database_vision.
+    This function aims to get the all the detections
+    in a certain zone provided by database_vision.
 
-        Detection via fasterrcnn_resnet50_fpn:
+       Detection via fasterrcnn_resnet50_fpn:
 
-        - boxes (``FloatTensor[N, 4]``): the predicted boxes in ``[x1, y1, x2, y2]`` format, with values of ``x``
-                            between ``0`` and ``W`` and values of ``y`` between ``0`` and ``H``
+    - boxes (``FloatTensor[N, 4]``)
 
-        - labels (``Int64Tensor[N]``): the predicted labels for each image
+    - labels (``Int64Tensor[N]``): the predicted labels for each image
 
-        - scores (``Tensor[N]``): the scores or each prediction
+    - scores (``Tensor[N]``): the scores or each prediction
+
+    :param debug: Boolean
 
     :param database_vision: class DatabaseVision
 
@@ -516,24 +752,11 @@ To compensate, you have to stabilize optimization with small learning rates.
 
         assert current_rect is not None
 
-        height_rect = current_rect[0][0][1] - current_rect[0][2][1]
-        width_rect = current_rect[0][1][0] - current_rect[0][0][0]
-        assert height_rect &gt; 0
-        assert width_rect &gt; 0
-
-        # Case Study Custom Parameters !!
-
-        # TODO(logan): check that the absolute_height_marge is not too large according to the image size...
-        marge_rect_for_detection = 0.20  # 30% marge to get a rectangle that is enough to get an accurate detection
-        absolute_height_marge = int(marge_rect_for_detection * height_rect / 2)
-        absolute_width_marge = int(marge_rect_for_detection * width_rect / 2)
+        height_rect, width_rect, \
+        absolute_height_marge, absolute_width_marge = get_rectangle(database_vision, current_rect)
 
         # Debug : print(height_rect, width_rect)
-
-        buffer_size = 10  # How many frames we skipped ?
         it_buffer = -1  # iterator to count the number of frames since the last processed.
-
-        do_resizing_method = False
 
         # Files Management setup for screenshots
         time_stamp = -1
@@ -541,8 +764,9 @@ To compensate, you have to stabilize optimization with small learning rates.
         assert lane.isnumeric() and hour.isnumeric()
 
         # &#34;screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;+time_stamp+&#34;.png&#34;
+        base_file_name = &#34;./screenshots/highway_&#34; + lane + &#34;/&#34; + hour + &#34;h/&#34;
+
         try:
-            base_file_name = &#34;./screenshots/highway_&#34;+lane+&#34;/&#34;+hour+&#34;h/&#34;
             os.makedirs(base_file_name)
         except FileExistsError:
             # directory already exists
@@ -557,66 +781,108 @@ To compensate, you have to stabilize optimization with small learning rates.
 
             # Skip some frames
             it_buffer += 1
-            if it_buffer == buffer_size:
+            if it_buffer == database_vision.buffer_size:
                 it_buffer = -1
 
             if ret is True:
                 if it_buffer == -1:
-
                     # Take the region of interest with some margins
+                    minor_x = current_rect[0][2][1] - absolute_height_marge
+                    minor_y = current_rect[0][0][0] - absolute_width_marge
+
                     crop_img = frame[
-                               current_rect[0][2][1] - absolute_height_marge:
+                               minor_x:
                                current_rect[0][2][1] + height_rect + absolute_height_marge,
-                               current_rect[0][0][0] - absolute_width_marge:
+                               minor_y:
                                current_rect[0][0][0] + width_rect + absolute_width_marge
                                ]
 
                     # Debug :
                     # cv2.imshow(&#34;cropped&#34;, crop_img)
 
-                    img_process = process_image(crop_img, do_resizing_method)
+                    img_process = process_image(crop_img,
+                                                img_nn_size=database_vision.do_resizing_method,
+                                                normalize=False)
 
-                    # run inference on the model and get detections
-                    tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
-                    with torch.no_grad():
-                        tensor_img = tensor_img.to(device)
-                        detections = model(tensor_img)[0]
+                    detections = run_inference(img_process)
 
                     boxes = detections[&#34;boxes&#34;]  # boxes
                     labels = detections[&#34;labels&#34;]  # labels
                     scores = detections[&#34;scores&#34;]  # scores
 
-                    tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)  # IOU = AREA of Overlap / AREA of the Union
+                    tensor_filter = torchvision.ops.nms(boxes, scores, 0.5)
+                    # IOU = AREA of Overlap / AREA of the Union
 
-                    one_valid_box_found = False
-                    for i in range(0, 3):
-                        if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
-                                and scores[tensor_filter[i]] &gt; 0.5:
-                            one_valid_box_found = True
-                            screenshots_results[&#39;screenshots&#39;].append([
-                                                    time_stamp,
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    database_vision.id_color[int(labels[tensor_filter[i]])]
-                                                    ])
-                            if debug is True:
-                                resized = cv2.rectangle(img_process.transpose(1, 2, 0),
-                                                    tuple([int(boxes[tensor_filter[i]][0]), int(boxes[tensor_filter[i]][1])]),
-                                                    tuple([int(boxes[tensor_filter[i]][2]), int(boxes[tensor_filter[i]][3])]),
-                                                    color=database_vision.id_color[int(labels[tensor_filter[i]])], thickness=2)
-                    if one_valid_box_found and debug:
-                        cv2.imshow(&#34;Filter&#34;, resized)
+                    resized = None
 
+                    if len(tensor_filter) &gt; 0:
+                        one_valid_box_found = False
+                        minimum_detection_objects = min(len(tensor_filter),
+                                                        database_vision.nb_detection_per_image)
+                        for i in range(0, minimum_detection_objects):
+                            if labels[tensor_filter[i]] in database_vision.id_object_to_detect \
+                                    and scores[tensor_filter[i]] &gt; 0.5:
+                                one_valid_box_found = True
+                                screenshots_results[&#39;screenshots&#39;].append([
+                                    time_stamp,
+                                    tuple([int(boxes[tensor_filter[i]][0]) + minor_y,
+                                           int(boxes[tensor_filter[i]][1]) + minor_x]),
+                                    tuple([int(boxes[tensor_filter[i]][2]) + minor_y,
+                                           int(boxes[tensor_filter[i]][3]) + minor_x]),
+                                    database_vision.id_color[int(labels[tensor_filter[i]])]
+                                ])
+                                if debug is True:
+                                    rect_pt_1 = tuple([int(boxes[tensor_filter[i]][0]),
+                                                       int(boxes[tensor_filter[i]][1])])
+                                    rect_pt_2 = tuple([int(boxes[tensor_filter[i]][2]),
+                                                       int(boxes[tensor_filter[i]][3])])
+                                    resized = cv2.rectangle(img_process.transpose(1, 2, 0),
+                                                            rect_pt_1,
+                                                            rect_pt_2,
+                                                            color=database_vision.id_color[
+                                                                int(labels[tensor_filter[i]])
+                                                            ], thickness=2)
+                        if one_valid_box_found and debug:
+                            cv2.imshow(&#34;Filter&#34;, resized)
                 if cv2.waitKey(1) &amp; 0xFF == ord(&#39;q&#39;):
                     break
             else:
                 break
 
-        with open(base_file_name + &#34;screenshots_result.txt&#34;, &#39;w&#39;) as outfile:
+        with open(base_file_name + &#34;screenshots_result.json&#34;, &#39;w&#39;) as outfile:
             json.dump(screenshots_results, outfile)
 
         video_to_process.release()
         cv2.destroyAllWindows()</code></pre>
+</details>
+</dd>
+<dt id="wvideo.run_inference"><code class="name flex">
+<span>def <span class="ident">run_inference</span></span>(<span>img_process)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>This function aims to run the inference on the nn selected
+with the img_process image as the input.</p>
+<p>:param img_process: OpenCV image</p>
+<p>:return: torchvision output detection</p></div>
+<details class="source">
+<summary>
+<span>Expand source code</span>
+</summary>
+<pre><code class="python">def run_inference(img_process):
+    &#34;&#34;&#34;
+    This function aims to run the inference on the nn selected
+    with the img_process image as the input.
+
+    :param img_process: OpenCV image
+
+    :return: torchvision output detection
+    &#34;&#34;&#34;
+    # run inference on the model and get detections
+    tensor_img = torch.FloatTensor([img_process])  # 32-bit floating point
+    with torch.no_grad():
+        tensor_img = tensor_img.to(device)
+        detections = model(tensor_img)[0]
+    return detections</code></pre>
 </details>
 </dd>
 </dl>
@@ -633,9 +899,12 @@ To compensate, you have to stabilize optimization with small learning rates.
 <li><h3><a href="#header-functions">Functions</a></h3>
 <ul class="">
 <li><code><a title="wvideo.filter_file_name" href="#wvideo.filter_file_name">filter_file_name</a></code></li>
+<li><code><a title="wvideo.get_rectangle" href="#wvideo.get_rectangle">get_rectangle</a></code></li>
 <li><code><a title="wvideo.get_video_type_by_collision" href="#wvideo.get_video_type_by_collision">get_video_type_by_collision</a></code></li>
+<li><code><a title="wvideo.post_process" href="#wvideo.post_process">post_process</a></code></li>
 <li><code><a title="wvideo.process_image" href="#wvideo.process_image">process_image</a></code></li>
 <li><code><a title="wvideo.process_video" href="#wvideo.process_video">process_video</a></code></li>
+<li><code><a title="wvideo.run_inference" href="#wvideo.run_inference">run_inference</a></code></li>
 </ul>
 </li>
 </ul>
