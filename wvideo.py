@@ -7,7 +7,7 @@
 
     License: Open Source
 
-    Client: Wintics
+    Client: *****
 
     Date: October 2020
 """

@@ -7,7 +7,7 @@
 
     License: Open Source
 
-    Client: Wintics
+    Client: *****
 
     Date: October 2020
 """
@@ -54,6 +54,6 @@ def main():
 
 
 if __name__ == '__main__':
-    print('Wintics (Case Study) by Logan Fortune.')
+    print('(Case Study) by Logan Fortune.')
     assert check_system()
     main()
